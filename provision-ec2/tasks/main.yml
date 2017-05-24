@@ -1,0 +1,128 @@
+---
+  - name: VPC 
+    ec2_vpc_net:
+      name: Create VPC
+      cidr_block: 10.0.0.0/16
+      region: "{{ ec2_region }}"
+      tags:
+        module: ec2_vpc_net
+      tenancy: dedicated
+    register: my_vpc
+
+  - name: Set VPC ID in variable
+    set_fact:
+      vpc_id: "{{ my_vpc.vpc.id }}"
+
+  - name: Get VPC Topology information using vpc-id
+    ec2_vpc_net_facts:
+      region: "{{ ec2_region }}"
+    register: vpc_data
+
+  - name: create vpc igw
+    ec2_vpc_igw:
+      vpc_id: "{{ vpc_id }}"
+      region: "{{ ec2_region }}"
+      state: present
+    register: igw
+
+  - name: Set igw in variable
+    set_fact:
+      igw_id: "{{ igw.gateway_id }}"
+
+  - name: set route table
+    ec2_vpc_route_table:
+      vpc_id: "{{ vpc_id }}"
+      region: "{{ ec2_region }}"
+      tags:
+        Name: "Public"
+      routes: 
+        - dest: "0.0.0.0/0"
+          gateway_id: "{{ igw_id }}"
+
+  - name: Create management subnet
+    ec2_vpc_subnet:
+      state: present
+      vpc_id: "{{ vpc_id }}" 
+      region: "{{ ec2_region }}"
+      cidr: 10.0.0.0/24
+      resource_tags:
+        Name: management subnet
+    register: management_subnet
+
+  - name: managment subnet variable 
+    set_fact:
+      management_subnet_id: "{{ management_subnet.subnet.id }}"
+
+  - name: Create external subnet
+    ec2_vpc_subnet:
+      state: present
+      vpc_id: "{{ vpc_id }}" 
+      region: "{{ ec2_region }}"
+      cidr: 10.0.1.0/24
+      resource_tags:
+        Name: external subnet
+    register: external_subnet
+
+  - name: external subnet variable 
+    set_fact:
+      external_subnet_id: "{{ external_subnet.subnet.id }}"
+
+  - name: Create internal subnet
+    ec2_vpc_subnet:
+      state: present
+      vpc_id: "{{ vpc_id }}" 
+      region: "{{ ec2_region }}"
+      cidr: 10.0.2.0/24
+      resource_tags:
+        Name: internal subnet
+    register: internal_subnet
+
+  - name: internal subnet variable 
+    set_fact:
+      internal_subnet_id: "{{ internal_subnet.subnet.id }}"
+
+  - name: external eni
+    ec2_eni:
+      device_index: 2 
+      region: "{{ ec2_region }}"
+      private_ip_address: 10.0.1.10 
+      subnet_id: "{{ external_subnet_id }}"
+      state: present
+    register: external_eni
+
+  - name: internal eni
+    ec2_eni:
+      device_index: 1
+      region: "{{ ec2_region }}"
+      private_ip_address: 10.0.2.10 
+      secondary_private_ip_addresses: 10.0.2.183
+      subnet_id: "{{ internal_subnet_id }}"
+      state: present
+    register: internal_eni
+
+  - name: internal subnet variable
+    set_fact:
+      internal_eni_id: "{{ internal_eni.interface.id }}"
+
+  - name: associate an elastic IP with a device
+    ec2_eip:
+        device_id: "{{ internal_eni_id }}"
+        region: "{{ ec2_region }}"
+        in_vpc: true
+        ip: 10.0.2.183
+
+  - name: Provision BigIP  Box
+    local_action:
+      module: ec2
+      key_name: "{{ ec2_keypair }}"
+      instance_type: "{{ ec2_instance_type }}"
+      image: "{{ ec2_image }}"
+      region: "{{ ec2_region }}"
+      vpc_subnet_id: "{{ management_subnet_id }}" 
+      tenancy: dedicated
+      assign_public_ip: yes
+      instance_tags: '{"Name":"{{ec2_tag_Name}}","Type":"{{ec2_tag_Type}}","Environment":"{{ec2_tag_Environment}}"}'
+      wait: true
+      count: 1
+    register: ec2
+...

@@ -1,0 +1,8 @@
+ec2_keypair: "id_rsa_terraform"
+ec2_instance_type: "m4.xlarge"
+ec2_image: "ami-6bbd260b"
+ec2_region: "us-west-2"
+ec2_tag_Name: "bigip"
+ec2_tag_Type: "bigip"
+ec2_tag_Environment: "production"
+ec2_volume_size: "126"
